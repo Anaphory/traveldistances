@@ -53,7 +53,7 @@ def train_model(y, **kwargs):
 
     def euclidean_distance(x1x2):
         x1, x2 = x1x2
-        return K.sum((x1 - x2) * (x1 - x2)) ** 0.5
+        return K.sum((x1 - x2) * (x1 - x2), axis=1) ** 0.5
 
     euclidean = Lambda(euclidean_distance)([embedding_1, embedding_2])
 
@@ -83,26 +83,27 @@ def train_model(y, **kwargs):
         ],
         optimizer="adam",
     )
-    tf.keras.utils.plot_model(full_model)
+    tf.keras.utils.plot_model(full_model, show_shapes=True)
 
     X_train = y_train[:, 1:]
     model_fp = "%s/%s.hdf5" % ("models", "embed")
-    checkpointer = ModelCheckpoint(model_fp, save_best_only=True)
-    es = EarlyStopping(patience=early_stopping)
+    callbacks = [ModelCheckpoint(model_fp, save_best_only=True)]
+    if early_stopping:
+        callbacks.append(EarlyStopping(early_stopping))
     history = full_model.fit(
-        [X_train[:, 0:2], X_train[2:4]],
+        [X_train[:, 0:2], X_train[:, 2:4]],
         [y_train[:, 0], y_train[:, 1:3], y_train[:, 3:5]],
         epochs=train_epochs,
         validation_split=0.1,
-        callbacks=[checkpointer, es],
+        callbacks=callbacks,
     )
 
     val_losses = history.history["val_loss"]
     best_epoch = val_losses.index(min(val_losses)) + 1
 
-    y_pred = full_model.predict(y[:, 1:])
-    y_pred_train = full_model.predict(y_train[:, 1:])
-    y_pred_test = full_model.predict(y_test[:, 1:])
+    y_pred = full_model.predict((y[:, 1:3], y[:, 3:5]))
+    y_pred_train = full_model.predict((y_train[:, 1:3], y_train[:, 3:5]))
+    y_pred_test = full_model.predict((y_test[:, 1:3], y_train[:, 3:5]))
     train_mse = mean_squared_error(y_train, y_pred_train)
     test_mse = mean_squared_error(y_test, y_pred_test)
 
