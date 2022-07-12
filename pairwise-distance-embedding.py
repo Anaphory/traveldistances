@@ -30,10 +30,11 @@ GEODESIC: geodesic.Geodesic = geodesic.Geodesic()
 def train_model(y, **kwargs):
     # unpack parameters. default values match our model architecture.
     width = kwargs["width"] if "width" in kwargs else 128
+    embedding = kwargs["embedding"] if "embedding" in kwargs else 5
     depth = kwargs["depth"] if "depth" in kwargs else 3
     dropout = kwargs["dropout"] if "dropout" in kwargs else 0.05
     early_stopping = kwargs["early_stopping"] if "early_stopping" in kwargs else None
-    train_epochs = kwargs["train_epochs"] if "train_epochs" in kwargs else 200
+    train_epochs = kwargs["train_epochs"] if "train_epochs" in kwargs else 2000
     plot = kwargs["plot"] if "plot" in kwargs else False
     verbose = kwargs["verbose"] if "verbose" in kwargs else False
 
@@ -50,6 +51,9 @@ def train_model(y, **kwargs):
         dout = Dropout(dropout)
         embedding_1 = dout(prelu(dense(embedding_1)))
         embedding_2 = dout(prelu(dense(embedding_2)))
+    dense = Dense(embedding)
+    embedding_1 = dense(embedding_1)
+    embedding_2 = dense(embedding_2)
 
     def euclidean_distance(x1x2):
         x1, x2 = x1x2
@@ -59,17 +63,15 @@ def train_model(y, **kwargs):
 
     exhuming_1 = embedding_1
     exhuming_2 = embedding_2
-    for i in range(depth - 1):
+    for i in range(depth):
         dense = Dense(width)
         prelu = PReLU()
         dout = Dropout(dropout)
         exhuming_1 = dout(prelu(dense(exhuming_1)))
         exhuming_2 = dout(prelu(dense(exhuming_2)))
     dense = Dense(2)
-    prelu = PReLU()
-    dout = Dropout(dropout)
-    exhuming_1 = dout(prelu(dense(exhuming_1)))
-    exhuming_2 = dout(prelu(dense(exhuming_2)))
+    exhuming_1 = exhuming_1
+    exhuming_2 = exhuming_2
 
     full_model = keras.Model(
         inputs=[latlon_inputs_1, latlon_inputs_2],
@@ -77,13 +79,14 @@ def train_model(y, **kwargs):
     )
     full_model.compile(
         loss=[
-            tf.keras.losses.MeanAbsoluteError(),
+            tf.keras.losses.MeanSquaredLogarithmicError(),
             tf.keras.losses.MeanSquaredError(),
             tf.keras.losses.MeanSquaredError(),
         ],
         optimizer="adam",
     )
-    tf.keras.utils.plot_model(full_model, show_shapes=True)
+    if plot:
+        tf.keras.utils.plot_model(full_model, show_shapes=True)
 
     X_train = y_train[:, 1:]
     model_fp = "%s/%s.hdf5" % ("models", "embed")
@@ -101,11 +104,12 @@ def train_model(y, **kwargs):
     val_losses = history.history["val_loss"]
     best_epoch = val_losses.index(min(val_losses)) + 1
 
-    y_pred = full_model.predict((y[:, 1:3], y[:, 3:5]))
-    y_pred_train = full_model.predict((y_train[:, 1:3], y_train[:, 3:5]))
-    y_pred_test = full_model.predict((y_test[:, 1:3], y_train[:, 3:5]))
-    train_mse = mean_squared_error(y_train, y_pred_train)
-    test_mse = mean_squared_error(y_test, y_pred_test)
+    d_pred, _, _ = full_model.predict((y[:, 1:3], y[:, 3:5]))
+    d_pred_train, _, _ = full_model.predict((y_train[:, 1:3], y_train[:, 3:5]))
+    d_pred_test, _, _ = full_model.predict((y_test[:, 1:3], y_test[:, 3:5]))
+
+    train_mse = mean_squared_error(y_train[:, 0], d_pred_train)
+    test_mse = mean_squared_error(y_test[:, 0], d_pred_test)
 
     if verbose:
         print("TRAIN MSE: %f" % train_mse)
@@ -113,15 +117,15 @@ def train_model(y, **kwargs):
         print("BEST EPOCH: %i" % best_epoch)
 
     if plot:
-        plt.scatter(y_pred_train, y_train)
+        plt.scatter(d_pred_train, y_train[:, 0])
         plt.title("Train")
         plt.show()
 
-        plt.scatter(y_pred_test, y_test)
+        plt.scatter(d_pred_test, y_test[:, 0])
         plt.title("Test")
         plt.show()
 
-        plt.scatter(y_pred, y)
+        plt.scatter(d_pred, y[:, 0])
         plt.title("All")
         plt.show()
 
@@ -233,7 +237,7 @@ def distances_from_focus(
     return dist
 
 
-if __name__ == "__main__":
+if __name__ == "__new_main__":
     y = [
         (
             1636622.1629435765,
@@ -338,10 +342,10 @@ if __name__ == "__main__":
     train_model(numpy.array(y), verbose=True, plot=True, model_name="alpha_model")
 
 
-if __name__ == "__new_main__":
+if __name__ == "__main__":
     DATABASE, TABLES = db(sys.argv[1])
-    nodes = [
-        (node, (lon, lat))
+    nodes = {
+        node: (lon, lat)
         for node, lon, lat in DATABASE.execute(
             select(
                 TABLES["nodes"].c.node_id,
@@ -354,14 +358,27 @@ if __name__ == "__new_main__":
                 & (TABLES["nodes"].c.latitude < 10)
             )
         )
-    ]
+    }
+    node_indices = list(nodes)
 
     y = [], []
     for i in tqdm(range(20)):
         i_start = numpy.random.randint(len(nodes))
         i_end = numpy.random.randint(len(nodes))
-        start, lonlat_start = nodes[i_start]
-        end, lonlat_end = nodes[i_end]
+        start = node_indices[i_start]
+        end = node_indices[i_end]
+        lonlat_start = nodes[start]
+        lonlat_end = nodes[end]
         dist = distances_from_focus(start, end)
-        y.append([dist, lonlat_start, lonlat_end])
-        print(dist[end], lonlat_start, lonlat_end)
+        for mid, distance in dist:
+            y.append(
+                [
+                    distance,
+                    lonlat_start[0],
+                    lonlat_start[1],
+                    nodes[distance][0],
+                    nodes[distance][1],
+                ]
+            )
+
+    train_model(numpy.array(y), verbose=True, plot=True, model_name="alpha_model")
