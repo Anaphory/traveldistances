@@ -8,10 +8,12 @@ import tensorflow as tf
 from keras.callbacks import EarlyStopping
 from keras.callbacks import LambdaCallback
 from keras.callbacks import ModelCheckpoint
+from keras.layers import BatchNormalization
 from keras.layers import Dense
 from keras.layers import Dropout
 from keras.layers import Lambda
 from keras.layers import PReLU
+from keras.optimizers import Adam
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 
@@ -35,6 +37,14 @@ def identity(x):
     return x
 
 
+class ReducingDropout(Dropout):
+    def call(self, inputs, training=None):
+        if self.rate > 1e-13:
+            self.rate *= 0.95
+            return super().call(inputs, training)
+        return inputs
+
+
 def train_model(
     train,
     test,
@@ -43,11 +53,10 @@ def train_model(
     embedding=8,
     plot=False,
     from_3d=False,
-    dropouts=False,
+    dropout=0.05,
     **kwargs,
 ):
     # unpack parameters. default values match our model architecture.
-    dropout = kwargs["dropout"] if "dropout" in kwargs else 0.05
     early_stopping = kwargs["early_stopping"] if "early_stopping" in kwargs else None
     train_epochs = kwargs["train_epochs"] if "train_epochs" in kwargs else 2000
     verbose = kwargs["verbose"] if "verbose" in kwargs else False
@@ -55,8 +64,10 @@ def train_model(
     model_string = "embedding-{}-{}".format("-".join(str(w) for w in widths), embedding)
     if from_3d:
         model_string += "-from3d"
-    if not dropouts:
-        model_string += "-nodout"
+    if dropout < -0.5:
+        model_string += "-batchnorm"
+    elif dropout:
+        model_string += "-dout-{:0.5f}".format(dropout)
 
     # Do we need the h5 format? Because this isn't generating an h5 model store.
     model_fp = f"models/{model_string:s}/"
@@ -76,8 +87,10 @@ def train_model(
         for width in widths:
             dense = Dense(width)
             prelu = PReLU()
-            if dropouts:
-                dout = Dropout(dropout)
+            if dropout < 0.5:
+                dout = BatchNormalization()
+            elif dropout:
+                dout = ReducingDropout(dropout)
             else:
                 dout = identity
             embedding_1 = dout(prelu(dense(embedding_1)))
@@ -86,24 +99,29 @@ def train_model(
         embedding_1 = dense(embedding_1)
         embedding_2 = dense(embedding_2)
 
-        euclidean = Lambda(euclidean_distance)([embedding_1, embedding_2])
+        euclidean = Lambda(euclidean_distance, name="euclidean_distance_in_embedding")(
+            [embedding_1, embedding_2]
+        )
 
         exhuming_1 = embedding_1
         exhuming_2 = embedding_2
         for width in widths:
             dense = Dense(width)
             prelu = PReLU()
-            if dropouts:
-                dout = Dropout(dropout)
+            if dropout < 0.5:
+                dout = BatchNormalization()
+            elif dropout:
+                dout = ReducingDropout(dropout)
             else:
                 dout = identity
             exhuming_1 = dout(prelu(dense(exhuming_1)))
             exhuming_2 = dout(prelu(dense(exhuming_2)))
-        dense = Dense(2)
+        dense = Dense(2, name="exhuming")
         exhuming_1 = dense(exhuming_1)
         exhuming_2 = dense(exhuming_2)
-        output_3d_1 = Lambda(lonlat_to_3d)(exhuming_1)
-        output_3d_2 = Lambda(lonlat_to_3d)(exhuming_2)
+        to3d = Lambda(lonlat_to_3d, name="spherical_3d_coordinates")
+        output_3d_1 = to3d(exhuming_1)
+        output_3d_2 = to3d(exhuming_2)
 
         full_model = keras.Model(
             inputs=[latlon_inputs_1, latlon_inputs_2],
@@ -118,7 +136,7 @@ def train_model(
                 tf.keras.losses.MeanSquaredError(),
             ],
             loss_weights=[1.0, 1.0, 1.0, 1e-5, 1e-5],
-            optimizer="adam",
+            optimizer=Adam(),
         )
 
     if plot:
@@ -219,7 +237,7 @@ if __name__ == "__main__":
         "--widths", nargs="+", type=int, default=[1024, 512, 512, 512, 512]
     )
     parser.add_argument("--from-3d", action="store_true", default=False)
-    parser.add_argument("--dropouts", action="store_true", default=False)
+    parser.add_argument("--dropout", type=float, default=0.01)
     parser.add_argument("--plot", action="store_true", default=False)
     args = parser.parse_args()
 
@@ -322,5 +340,5 @@ if __name__ == "__main__":
         embedding=args.embedding,
         widths=args.widths,
         from_3d=args.from_3d,
-        dropouts=args.dropouts,
+        dropout=args.dropout,
     )
