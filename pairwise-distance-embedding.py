@@ -237,7 +237,12 @@ if __name__ == "__main__":
         "--widths", nargs="+", type=int, default=[1024, 512, 512, 512, 512]
     )
     parser.add_argument("--from-3d", action="store_true", default=False)
-    parser.add_argument("--dropout", type=float, default=0.01)
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=-1.0,
+        help="Dropout rate. For negative values, use Batch Normalization instead.",
+    )
     parser.add_argument("--plot", action="store_true", default=False)
     args = parser.parse_args()
 
