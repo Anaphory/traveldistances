@@ -3,9 +3,11 @@ import argparse
 
 import cartopy.crs as ccrs
 import cartopy.geodesic as geodesic
+import keras.backend as K
 import keras.models
 import matplotlib.cm as cm
 import numpy
+import tensorflow as tf
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 from sqlalchemy import select
@@ -82,6 +84,16 @@ def distance_raster(start, ends):
         ).one()
         distances[lon, lat] = dist
     return distances
+
+
+def lonlat_to_3d(lonlat):
+    lon = lonlat[..., 0] * numpy.pi / 180
+    lat = lonlat[..., 1] * numpy.pi / 180
+    return tf.stack(
+        (K.sin(lon) * K.cos(lat), K.cos(lon) * K.cos(lat), K.sin(lat)),
+        -1,
+        name="coords_3d",
+    )
 
 
 X = 100
