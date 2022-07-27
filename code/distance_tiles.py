@@ -1,19 +1,16 @@
 import typing as t
 
 import numpy
-
 import rasterio
-
 from earth import GEODESIC
+from raster_data import boundingbox_from_tile
+from raster_data import ecoregion_tile
+from raster_data import gmted_tile
+from raster_data import RowCol
+from raster_data import Tile
+from raster_data import tile_from_geocoordinates
+
 from ecoregions import TC
-from raster_data import (
-    gmted_tile,
-    Tile,
-    ecoregion_tile,
-    boundingbox_from_tile,
-    tile_from_geocoordinates,
-    RowCol,
-)
 
 
 def extend_tile(
@@ -313,6 +310,7 @@ def moore_distances(tile: Tile):
 
 if __name__ == "__main__":
     import sys
+
     tile = sys.argv[1]
     ns, lat, ew, lon = tile[2], int(tile[0:2]), tile[6], int(tile[3:6])
     print((ns, lat, ew, lon))

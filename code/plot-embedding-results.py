@@ -8,13 +8,12 @@ import keras.models
 import matplotlib.cm as cm
 import numpy
 import tensorflow as tf
+from database import db
+from generate_training_data import distances_from_focus
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 from sqlalchemy import select
 from tqdm import tqdm
-
-from database import db
-from generate_training_data import distances_from_focus
 
 
 DATABASE, TABLES = db("sqlite:///all-distances.sqlite")
@@ -96,8 +95,32 @@ def lonlat_to_3d(lonlat):
     )
 
 
-X = 100
-Y = 100
+examples = [
+    {
+        "Alb": (19 + 27 / 60, 41 + 19 / 60),
+        "Arm": (47.057, 39.68),
+        "Ana": (34.617, 40.020),
+        "BSl": (31 + 32 / 60 + 57 / 3600, 49 + 42 / 60 + 10 / 3600),
+        "Cel": (8 + 42 / 60, 45 + 43 / 60),
+        "Ger": (10 + 18 / 60 + 38 / 3600, 55 + 26 / 60 + 22 / 3600),
+        "Grk": (21 + 43.4 / 3600, 36 + 59.7 / 60),
+        "Lat": (12 + 54 / 60, 41 + 50 / 60),
+        "IAr": (76.182, 27.43),
+        "Ira": (47 + 26 / 60 + 9 / 3600, 34 + 23 / 60 + 26 / 3600),
+        "Toc": (82 + 58 / 60, 41 + 43 / 60),
+    },
+    {
+        "crh": (34.08, 45.00),
+        "nog": (43.17, 44.90),
+        "kum": (47.00, 43.00),
+        "azj": (46.47, 40.98),
+        "tuk": (59.18, 37.09),
+        "kaa": (63.32, 39.98),
+    },
+]
+
+X = 300
+Y = 300
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("stored_model")
@@ -144,86 +167,92 @@ if __name__ == "__main__":
         )
     plt.show()
 
-    min_lon, max_lon, min_lat, max_lat = 32.6, 54.9, 38.9, 49.3
-    mesh_coords = numpy.stack(
-        numpy.meshgrid(
-            numpy.linspace(min_lon, max_lon, X), numpy.linspace(min_lat, max_lat, Y)
+    for positions in examples:
+        lons, lats = zip(*positions.values())
+        min_lon, max_lon, min_lat, max_lat = min(lons), max(lons), min(lats), max(lats)
+        mesh_coords = numpy.stack(
+            numpy.meshgrid(
+                numpy.linspace(min_lon, max_lon, X), numpy.linspace(min_lat, max_lat, Y)
+            )
+        ).transpose((1, 2, 0))
+        n = len(positions)
+        coords = numpy.array(list(positions.values()))
+        nodes = [nearby_node(lon, lat) for lon, lat in coords]
+        stack = numpy.stack(
+            numpy.broadcast_arrays(mesh_coords[None, :, :, :], coords[:, None, None, :])
         )
-    ).transpose((1, 2, 0))
-    positions = {
-        "crh": (34.08, 45.00),
-        "nog": (43.17, 44.90),
-        "kum": (47.00, 43.00),
-        "azj": (46.47, 40.98),
-        "tuk": (59.18, 37.09),
-        "kaa": (63.32, 39.98),
-    }
-    coords = numpy.array(list(positions.values()))
-    nodes = [nearby_node(lon, lat) for lon, lat in coords]
-    stack = numpy.stack(
-        numpy.broadcast_arrays(mesh_coords[None, :, :, :], coords[:, None, None, :])
-    )
-    starts, ends = numpy.broadcast_arrays(
-        mesh_coords[None, :, :, :], coords[:, None, None, :]
-    )
-    results = full_model.predict([starts.reshape(-1, 2), ends.reshape(-1, 2)])
+        starts, ends = numpy.broadcast_arrays(
+            mesh_coords[None, :, :, :], coords[:, None, None, :]
+        )
+        results = full_model.predict([starts.reshape(-1, 2), ends.reshape(-1, 2)])
 
-    distances = []
-    common_nodes = None
-    for i, node in enumerate(tqdm(nodes)):
-        d = distance_raster(node, nodes[:i] + nodes[i + 1 :])
-        if common_nodes:
-            common_nodes &= set(d)
-        else:
-            common_nodes = set(d)
-        distances.append(d)
+        max_dist = []
+        distances = []
+        common_nodes = None
+        for i, node in enumerate(tqdm(nodes)):
+            d = distance_raster(node, nodes[:i] + nodes[i + 1 :])
+            if common_nodes is None:
+                common_nodes = set(d)
+            else:
+                common_nodes &= set(d)
+            distances.append(d)
+            max_dist.append(max(d.values()))
 
-    common_distances = {
-        point: sum(d[point] for d in distances) for point in tqdm(common_nodes)
-    }
-    x = [x for x, y in common_distances]
-    y = [y for x, y in common_distances]
-    c = list(common_distances.values())
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mollweide())
-    ax.coastlines()
-    ax.set_global()
+        median_max = numpy.median(max_dist)
 
-    cmap = cm.get_cmap("viridis")
-    normalizer = Normalize(0, 12_000_000)
+        cmap = cm.get_cmap("viridis")
+        normalizer = Normalize(0, median_max)
+        im = cm.ScalarMappable(norm=normalizer)
+        fig = plt.figure()
+        all_axes = []
+        for i, (lon, lat) in enumerate(tqdm(positions.values())):
+            ax = fig.add_subplot(
+                int(n**0.5),
+                (n - 1) // int(n**0.5) + 1,
+                i + 1,
+                projection=ccrs.Mollweide(),
+            )
+            all_axes.append(ax)
+            ax.coastlines()
+            mesh = ax.pcolormesh(
+                mesh_coords[..., 0],
+                mesh_coords[..., 1],
+                results[0].reshape((n, X, Y))[i],
+                transform=ccrs.PlateCarree(),
+                cmap=cmap,
+                norm=normalizer,
+            )
+            x = [x for x, y in common_nodes]
+            y = [y for x, y in common_nodes]
+            c = [distances[i][n] for n in common_nodes]
+            plt.scatter(
+                x, y, 1, c=c, transform=ccrs.PlateCarree(), cmap=cmap, norm=normalizer
+            )
+            ax.scatter([lon], [lat], transform=ccrs.PlateCarree())
+            ax.set_title(list(positions)[i])
+        plt.show()
 
-    plt.pcolormesh(
-        mesh_coords[..., 0],
-        mesh_coords[..., 1],
-        results[0].reshape((6, X, Y)).sum(0),
-        transform=ccrs.PlateCarree(),
-    )
-    plt.scatter(x, y, 1, c=c, transform=ccrs.PlateCarree(), cmap=cmap, norm=normalizer)
-    plt.show()
-
-    cmap = cm.get_cmap("viridis")
-    normalizer = Normalize(0, 12_000_000)
-
-    im = cm.ScalarMappable(norm=normalizer)
-    fig = plt.figure()
-    for i, (lat, lon) in enumerate(tqdm(positions.values())):
-        ax = fig.add_subplot(2, 3, i + 1, projection=ccrs.Mollweide())
+        common_distances = {
+            point: sum(d[point] for d in distances) for point in tqdm(common_nodes)
+        }
+        x = [x for x, y in common_distances]
+        y = [y for x, y in common_distances]
+        c = list(common_distances.values())
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mollweide())
         ax.coastlines()
-        ax.pcolormesh(
+        ax.set_global()
+        cmap = cm.get_cmap("viridis")
+        normalizer = Normalize(0, median_max * len(positions))
+        plt.pcolormesh(
             mesh_coords[..., 0],
             mesh_coords[..., 1],
-            results[0].reshape((6, X, Y))[i],
+            results[0].reshape((n, X, Y)).sum(0),
             transform=ccrs.PlateCarree(),
             cmap=cmap,
             norm=normalizer,
         )
-        x = [x for x, y in common_nodes]
-        y = [y for x, y in common_nodes]
-        c = [distances[i][n] for n in common_nodes]
         plt.scatter(
             x, y, 1, c=c, transform=ccrs.PlateCarree(), cmap=cmap, norm=normalizer
         )
-        ax.scatter([lon], [lat], transform=ccrs.PlateCarree())
-        ax.set_title(list(positions)[i])
-
-    plt.show()
+        plt.show()

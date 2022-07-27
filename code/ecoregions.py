@@ -1,9 +1,8 @@
-import zipfile
 import typing as t
+import zipfile
 from pathlib import Path
 
 import numpy
-
 import shapefile
 import shapely.geometry as sgeom
 from shapely.prepared import prep

@@ -1,16 +1,12 @@
-from tqdm import tqdm
 import numpy
-
-import sqlalchemy
-from sqlalchemy.dialects.sqlite import insert
-
 import shapely.geometry as sgeom
-
-from earth import GEODESIC
-from database import db
+import sqlalchemy
 from by_river import KAYAK_SPEED  # in m/s
-
+from database import db
 from earth import DEFINITELY_INLAND
+from earth import GEODESIC
+from sqlalchemy.dialects.sqlite import insert
+from tqdm import tqdm
 
 DATABASE, TABLES = db()
 
@@ -70,9 +66,9 @@ def distance_by_sea(definitely_inland, skip: bool = True) -> None:
         if values:
             DATABASE.execute(insert(TABLES["edges"]).values(values))
 
+
 if __name__ == "__main__":
     import sys
-    DATABASE, TABLES = db(
-    file=sys.argv[1]
-)
+
+    DATABASE, TABLES = db(file=sys.argv[1])
     distance_by_sea(DEFINITELY_INLAND)

@@ -2,15 +2,20 @@
 import sys
 
 import numpy
-
 import rasterio
-from main import load_distances, distances_from_focus
-from tqdm import tqdm
-from earth import ALL, COAST
-from h3.api import basic_int as h3
 from database import db
-from raster_data import Tile, fmt, unfmt, boundingbox_from_tile, H3Index
+from earth import ALL
+from earth import COAST
+from h3.api import basic_int as h3
+from main import distances_from_focus
+from main import load_distances
+from raster_data import boundingbox_from_tile
+from raster_data import fmt
+from raster_data import H3Index
+from raster_data import Tile
+from raster_data import unfmt
 from sqlalchemy.dialects.sqlite import insert
+from tqdm import tqdm
 
 
 def core_point(hexbin, distance_by_direction, wading_time, transform):
@@ -46,8 +51,7 @@ def core_point(hexbin, distance_by_direction, wading_time, transform):
     points = [(r - rmin, c - cmin) for r, c in points]
 
     dist = {
-        (n, e): d[rmin:rmax, cmin:cmax]
-        for (n, e), d in distance_by_direction.items()
+        (n, e): d[rmin:rmax, cmin:cmax] for (n, e), d in distance_by_direction.items()
     }
     dist[0, -1] = dist[0, 1] = dist[0, 1] + dist[0, -1]
     dist[-1, -1] = dist[1, 1] = dist[1, 1] + dist[-1, -1]

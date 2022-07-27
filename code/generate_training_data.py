@@ -7,11 +7,10 @@ from itertools import count
 
 import cartopy.geodesic as geodesic
 import numpy
+from database import db
 from numpy import inf
 from sqlalchemy import select
 from tqdm import tqdm
-
-from database import db
 
 GEODESIC: geodesic.Geodesic = geodesic.Geodesic()
 

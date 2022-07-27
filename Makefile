@@ -95,7 +95,7 @@ pairwise-%.sqlite: distances-%.tif x-rivers-%.tif rivers-%.sqlite core-points-%.
 
 all-distances.sqlite: $(foreach TILE,$(tiles),x-pairwise-$(TILE).sqlite) sea_distance.sqlite
 	for input in $^; \
-	  do sqlite3 $$iinput .dump | \
+	  do sqlite3 $$input .dump | \
 	  sed -e 's/CREATE TABLE/CREATE TABLE IF NOT EXISTS/' | \
 	  sqlite3 /tmp/$@ ; \
 	  echo $$input ; \

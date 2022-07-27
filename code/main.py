@@ -1,25 +1,22 @@
 """Aggregate distance inputs into a distance matrix."""
 import typing as t
+from heapq import heappop as pop
+from heapq import heappush as push
 from itertools import count
-from heapq import heappush as push, heappop as pop
 
 import numpy
-from tqdm import tqdm
-from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert
-
-from h3.api import basic_int as h3
-
 import rasterio
-from raster_data import (
-    boundingbox_from_tile,
-    Tile,
-    RowCol,
-    fmt,
-    unfmt
-)
 from database import db
 from earth import LonLat
+from h3.api import basic_int as h3
+from raster_data import boundingbox_from_tile
+from raster_data import fmt
+from raster_data import RowCol
+from raster_data import Tile
+from raster_data import unfmt
+from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert
+from tqdm import tqdm
 
 DATABASE, TABLES = db()
 RESOLUTION = 5
@@ -102,10 +99,10 @@ def distances_from_focus(
 
 
 def distances_trimmed(source, points, distance_by_direction, transform):
-    rmin = min(r for r, c in points) - 2
-    rmax = max(r for r, c in points) + 3
-    cmin = min(c for r, c in points) - 2
-    cmax = max(c for r, c in points) + 3
+    rmin = max(min(r for r, c in points) - 2, 0)
+    rmax = min(max(r for r, c in points) + 3, distance_by_direction[1, 0].shape[0])
+    cmin = max(min(c for r, c in points) - 2, 0)
+    cmax = min(max(c for r, c in points) + 3, distance_by_direction[1, 0].shape[1])
     points = [(r - rmin, c - cmin) for r, c in points]
 
     r0, c0 = source[0] - rmin, source[1] - cmin

@@ -1,5 +1,4 @@
 """What we know about Earth."""
-
 import json
 import pickle
 import typing as t
@@ -7,9 +6,9 @@ import typing as t
 import cartopy.geodesic as geodesic
 import cartopy.io.shapereader as shpreader
 from h3.api import basic_int as h3
+from shapely.geometry import mapping
 from shapely.ops import unary_union
 from shapely.prepared import prep
-from shapely.geometry import mapping
 
 LonLat = t.Tuple[float, float]
 
@@ -51,9 +50,7 @@ DEFINITELY_INLAND = prep(LAND.buffer(0.03))
 
 H3Index = int
 
-# ================
-# Process hexagons
-# ================
+
 def find_coast_hexagons() -> t.Set[H3Index]:
     coastal = set()
     # Coast resolution is 10m and coasts are not known to be straight, so we

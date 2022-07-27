@@ -79,7 +79,8 @@ def boundingbox_from_tile(tile: Tile):
 def fmt(tile: Tile):
     return "{1:02d}{0:s}{3:03d}{2:s}".format(*tile)
 
-def unfmt(tilename: str)-> Tile:
+
+def unfmt(tilename: str) -> Tile:
     """Parse a tile name
 
     >>> unfmt("10N030W")
@@ -118,7 +119,9 @@ if __name__ == "__main__":
                     fmt(tile_from_geocoordinates(lon, lat + 20)),
                 ]
             )
-        other_inputs = " ".join(f"../elevation/GMTED2010/{o}_20101117_gmted_mea150.tif" for o in others)
+        other_inputs = " ".join(
+            f"../elevation/GMTED2010/{o}_20101117_gmted_mea150.tif" for o in others
+        )
         print(
             f"""
 distances-{core}.tif: ../elevation/GMTED2010/{core}_20101117_gmted_mea150.tif {other_inputs}\n\tpython distance_tiles.py {core}"""
@@ -128,7 +131,9 @@ distances-{core}.tif: ../elevation/GMTED2010/{core}_20101117_gmted_mea150.tif {o
             f"""
 x-rivers-{core}.tif: rivers-{core}.tif {other_inputs}\n\tpython stitch.py {core}"""
         )
-        other_inputs = " ".join(f"voronoi-{o}.tif min_distances-{o}.tif" for o in others)
+        other_inputs = " ".join(
+            f"voronoi-{o}.tif min_distances-{o}.tif" for o in others
+        )
         print(
             f"""
 x-voronoi-{core}.tif: rivers-{core}.tif {other_inputs}\n\tpython stitch-voronoi.py {core}"""

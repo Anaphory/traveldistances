@@ -1,20 +1,20 @@
 import json
 import typing as t
 import zipfile
-import itertools
 from pathlib import Path
 
 import numpy
-
-import shapefile
 import rasterio.errors
+import shapefile
 import shapely.geometry as sgeom
-from tqdm import tqdm
-from h3.api import basic_int as h3
 from database import db
-from raster_data import fmt, unfmt, gmted_tile
+from h3.api import basic_int as h3
 from more_itertools import windowed
+from raster_data import fmt
+from raster_data import gmted_tile
+from raster_data import unfmt
 from sqlalchemy.dialects.sqlite import insert
+from tqdm import tqdm
 
 
 class RiverNetwork:
@@ -229,8 +229,9 @@ def wading_time(depth, width, velocity):
 
     Judging from [@davenport2017wading], analysed in a supplementary
     spreadsheet (rough data extracted using WebPlotDigitizer), it seems that
-    swim speed S [m/s] is roughly a lower bound for wading speed X [m/s], which
-    otherwise depends on the depth of the body of water D [m] as roughly
+    swim speed S = 0.5788666326641 [m/s] is roughly a lower bound for wading
+    speed X [m/s], which otherwise depends on the depth of the body of water D
+    [m] as roughly
 
     X = 1/(0.63 D + 1/X0)
 
@@ -261,7 +262,6 @@ def wading_time(depth, width, velocity):
     critical product, swimming is necessary.
 
     """
-    S = 0.5788666326641
     X0 = 1.4454683853418 / 10
     if depth * velocity > 1.27:
         # Wading is unstable
@@ -270,6 +270,8 @@ def wading_time(depth, width, velocity):
         # Too deep for wading
         return PRACTICALLY_INFINITY
     X = 1 / (0.63 * depth + 1 / X0)
+    # TODO: What about swim speed? This already starts out much lower than swim
+    # speed. Divide swim speed by 10 also?
 
     A = width * numpy.sqrt(1 + depth**2)
     return A / X  # Can be infinity

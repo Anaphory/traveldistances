@@ -2,8 +2,8 @@ import typing as t
 
 import sqlalchemy
 from sqlalchemy import event
-from sqlalchemy.schema import PrimaryKeyConstraint
 from sqlalchemy.engine import Engine
+from sqlalchemy.schema import PrimaryKeyConstraint
 
 
 @event.listens_for(Engine, "connect")

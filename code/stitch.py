@@ -1,9 +1,11 @@
 import sys
+
 import numpy
 import rasterio
-
-from raster_data import tile_from_geocoordinates, fmt, unfmt
 from by_river import PRACTICALLY_INFINITY
+from raster_data import fmt
+from raster_data import tile_from_geocoordinates
+from raster_data import unfmt
 
 
 def merge_river_tile(lon: float, lat: float):
