@@ -1,5 +1,8 @@
 """Plot embedding model results."""
 import argparse
+import functools
+import pickle
+from pathlib import Path
 
 import cartopy.crs as ccrs
 import cartopy.geodesic as geodesic
@@ -18,9 +21,6 @@ from tqdm import tqdm
 
 DATABASE, TABLES = db("sqlite:///all-distances.sqlite")
 GEODESIC: geodesic.Geodesic = geodesic.Geodesic()
-
-lon, lat = 34.08, 45.00
-# distances_from_focus(nearby_node(lon, lat), database=DATABASE, tables=TABLES)
 
 
 def nearby_node(longitude, latitude):
@@ -62,7 +62,7 @@ def nearby_node(longitude, latitude):
     return node_min
 
 
-def distance_raster(start, ends):
+def distance_scatterplot(start, ends):
     distances = {}
     for node, dist in distances_from_focus(
         start,
@@ -95,8 +95,8 @@ def lonlat_to_3d(lonlat):
     )
 
 
-examples = [
-    {
+examples = {
+    "IE": {
         "Alb": (19 + 27 / 60, 41 + 19 / 60),
         "Arm": (47.057, 39.68),
         "Ana": (34.617, 40.020),
@@ -109,7 +109,7 @@ examples = [
         "Ira": (47 + 26 / 60 + 9 / 3600, 34 + 23 / 60 + 26 / 3600),
         "Toc": (82 + 58 / 60, 41 + 43 / 60),
     },
-    {
+    "T": {
         "crh": (34.08, 45.00),
         "nog": (43.17, 44.90),
         "kum": (47.00, 43.00),
@@ -117,20 +117,34 @@ examples = [
         "tuk": (59.18, 37.09),
         "kaa": (63.32, 39.98),
     },
-]
+}
 
 X = 300
 Y = 300
+LINE_POINTS = 10
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("stored_model")
+    parser.add_argument("shortest_paths_cache", nargs="?", type=Path)
+    parser.add_argument("--baseline", action="store_true", default=False)
     args = parser.parse_args()
+
+    if args.shortest_paths_cache and args.shortest_paths_cache.exists():
+        with args.shortest_paths_cache.open("rb") as file:
+            all_distances = pickle.load(file)
+    else:
+        all_distances = {}
 
     full_model = keras.models.load_model(args.stored_model)
 
     embedding_model = keras.Model(
         inputs=[full_model.input[0]],
         outputs=[full_model.get_layer("euclidean_distance_in_embedding").input[0]],
+    )
+
+    exhuming_model = keras.Model(
+        inputs=[full_model.get_layer("euclidean_distance_in_embedding").input[0]],
+        outputs=[full_model.get_layer("exhuming").output],
     )
 
     mesh_coords = (
@@ -164,10 +178,12 @@ if __name__ == "__main__":
             extent=(-180, 180, -90, 90),
             transform=ccrs.PlateCarree(),
             origin="lower",
+            cmap=cm.get_cmap("inferno_r"),
         )
+    plt.subplots_adjust(0, 0, 1, 1, 0, 0)
     plt.show()
 
-    for positions in examples:
+    for family_label, positions in examples.items():
         lons, lats = zip(*positions.values())
         min_lon, max_lon, min_lat, max_lat = min(lons), max(lons), min(lats), max(lats)
         mesh_coords = numpy.stack(
@@ -184,24 +200,29 @@ if __name__ == "__main__":
         starts, ends = numpy.broadcast_arrays(
             mesh_coords[None, :, :, :], coords[:, None, None, :]
         )
+
         results = full_model.predict([starts.reshape(-1, 2), ends.reshape(-1, 2)])
 
-        max_dist = []
-        distances = []
-        common_nodes = None
-        for i, node in enumerate(tqdm(nodes)):
-            d = distance_raster(node, nodes[:i] + nodes[i + 1 :])
-            if common_nodes is None:
-                common_nodes = set(d)
+        if args.baseline:
+            if family_label in all_distances:
+                distances = all_distances[family_label]
             else:
-                common_nodes &= set(d)
-            distances.append(d)
-            max_dist.append(max(d.values()))
+                distances = []
+                for i, node in enumerate(tqdm(nodes)):
+                    d = distance_scatterplot(node, nodes[:i] + nodes[i + 1 :])
+                    distances.append(d)
+                all_distances[family_label] = distances
+            common_nodes = functools.reduce(lambda x, y: set(x) & set(y), distances)
+            max_dist = [max(d.values()) for d in distances]
+            common_distances = {
+                point: sum(d[point] for d in distances) for point in tqdm(common_nodes)
+            }
 
-        median_max = numpy.median(max_dist)
-
-        cmap = cm.get_cmap("viridis")
-        normalizer = Normalize(0, median_max)
+        cmap = cm.get_cmap("inferno_r")
+        try:
+            normalizer = Normalize(0, max_dist[len(max_dist) // 2])
+        except NameError:
+            normalizer = Normalize(0, results[0].max())
         im = cm.ScalarMappable(norm=normalizer)
         fig = plt.figure()
         all_axes = []
@@ -222,37 +243,64 @@ if __name__ == "__main__":
                 cmap=cmap,
                 norm=normalizer,
             )
-            x = [x for x, y in common_nodes]
-            y = [y for x, y in common_nodes]
-            c = [distances[i][n] for n in common_nodes]
-            plt.scatter(
-                x, y, 1, c=c, transform=ccrs.PlateCarree(), cmap=cmap, norm=normalizer
-            )
+            if args.baseline:
+                x = [x for x, y in common_nodes]
+                y = [y for x, y in common_nodes]
+                c = [distances[i][n] for n in common_nodes]
+                plt.scatter(
+                    x,
+                    y,
+                    1,
+                    c=c,
+                    transform=ccrs.PlateCarree(),
+                    cmap=cmap,
+                    norm=normalizer,
+                )
             ax.scatter([lon], [lat], transform=ccrs.PlateCarree())
             ax.set_title(list(positions)[i])
         plt.show()
 
-        common_distances = {
-            point: sum(d[point] for d in distances) for point in tqdm(common_nodes)
-        }
-        x = [x for x, y in common_distances]
-        y = [y for x, y in common_distances]
-        c = list(common_distances.values())
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1, projection=ccrs.Mollweide())
         ax.coastlines()
         ax.set_global()
-        cmap = cm.get_cmap("viridis")
-        normalizer = Normalize(0, median_max * len(positions))
+        sum_dist = results[0].reshape((n, X, Y)).sum(0)
+        try:
+            normalizer = Normalize(
+                min(common_distances.values()), max(common_distances.values())
+            )
+        except NameError:
+            normalizer = Normalize(sum_dist.min(), sum_dist.max())
+
+        min_sum = mesh_coords[
+            numpy.unravel_index(numpy.argmin(sum_dist), mesh_coords[..., 0].shape)
+        ]
+
         plt.pcolormesh(
             mesh_coords[..., 0],
             mesh_coords[..., 1],
-            results[0].reshape((n, X, Y)).sum(0),
+            sum_dist,
             transform=ccrs.PlateCarree(),
             cmap=cmap,
             norm=normalizer,
         )
-        plt.scatter(
-            x, y, 1, c=c, transform=ccrs.PlateCarree(), cmap=cmap, norm=normalizer
-        )
+        plt.scatter(*min_sum, transform=ccrs.PlateCarree())
+        if args.baseline:
+            x = [x for x, y in common_distances]
+            y = [y for x, y in common_distances]
+            c = list(common_distances.values())
+            plt.scatter(
+                x, y, 1, c=c, transform=ccrs.PlateCarree(), cmap=cmap, norm=normalizer
+            )
+
+        central_embedding = embedding_model.predict(min_sum[None])[0]
+        for other_embedding in embedding_model.predict(coords):
+            line_in_embedding_space = numpy.linspace(
+                central_embedding, other_embedding, LINE_POINTS
+            )
+            back_line = exhuming_model.predict(line_in_embedding_space)
+            plt.plot(*zip(*back_line), c="k", transform=ccrs.PlateCarree())
         plt.show()
+
+if args.shortest_paths_cache and not args.shortest_paths_cache.exists():
+    pickle.dump(all_distances, args.shortest_paths_cache.open("wb"))
